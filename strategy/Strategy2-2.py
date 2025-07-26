@@ -40,12 +40,12 @@ class StrategyTwoAnalyzer:
         """初始化分析器参数"""
         # 策略参数
         self.min_change_rate = 7  # 最小涨幅阈值（%）
-        self.volume_threshold = 0.35  # 成交量萎缩阈值（相对于高峰期的比例）
+        self.volume_threshold = 0.4  # 成交量萎缩阈值（相对于高峰期的比例）
         self.price_drop_threshold = 0.18  # 最大允许价格回调幅度（18%）
         self.ABSOLUTE_SHRINK_THRESHOLD = 0.4  # 绝对成交量萎缩阈值
         self.TEMPORARY_INCREASE_ALLOWANCE = 0.2  # 临时成交量放大容忍度
         self.MIN_CONSECUTIVE_DAYS = 8  # 最小缩量调整天数（非连续）
-        self.MIN_MA_SCORE = 8  # 均线聚合最小得分
+        self.MIN_MA_SCORE = 5  # 均线聚合最小得分
 
         # HTTP请求头
         self.headers = {
@@ -366,14 +366,10 @@ class StrategyTwoAnalyzer:
         # 计算当前价格回调幅度（即使未超过阈值）
         current_price_drop = (peak_price - last_day["close"]) / peak_price
 
-        # 检查5日均量是否呈下降趋势
-        ma5_decreasing = len(volume_ma5) < 2 or volume_ma5[-1] < volume_ma5[0] * 0.8
-
         # 综合判断是否满足缩量条件
         qualified = (
                 effective_days >= self.MIN_CONSECUTIVE_DAYS and  # 满足最小缩量天数
                 final_ratio < self.ABSOLUTE_SHRINK_THRESHOLD  # 量比低于绝对阈值
-            # and ma5_decreasing  # 可选条件：5日均量下降
         )
 
         return qualified, effective_days, final_ratio, current_price_drop
@@ -741,6 +737,46 @@ class StrategyTwoAnalyzer:
         if not hot_stocks:
             print(f"{Fore.RED}无法获取热股榜数据{Style.RESET_ALL}")
             return []
+
+        # 数据清洗和转换
+        processed_stocks = []
+        for stock in hot_stocks:
+            try:
+                # 处理涨跌幅字段
+                change_rate = stock['CHANGE_RATE']
+                if isinstance(change_rate, str):
+                    if change_rate == '-':  # 停牌股票
+                        change_rate = 0.0
+                    else:
+                        change_rate = float(change_rate.replace('%', ''))
+                stock['CHANGE_RATE'] = change_rate
+
+                # 处理涨跌幅字段
+                new_price = stock['NEW_PRICE']
+                if isinstance(new_price, str):
+                    if new_price == '-':  # 停牌股票
+                        new_price = 0.0
+                stock['NEW_PRICE'] = new_price
+
+                processed_stocks.append(stock)
+            except Exception as e:
+                print(f"{Fore.YELLOW}⚠️ 股票{stock.get('SECURITY_CODE', '未知')}数据异常: {e}{Style.RESET_ALL}")
+                continue
+
+        # 统计分析
+        up_stocks = [s for s in processed_stocks if s['CHANGE_RATE'] > 0]
+        if up_stocks:
+            avg_up = np.mean([s['CHANGE_RATE'] for s in up_stocks])
+            strong_up = len([s for s in up_stocks if s['CHANGE_RATE'] > 5]) / len(up_stocks)
+
+            print(f"上涨股票占比: {len(up_stocks) / len(processed_stocks):.1%}")
+            print(f"平均涨幅: {avg_up:.2f}%")
+            print(f"大涨(>5%)比例: {strong_up:.1%}")
+        else:
+            print(f"{Fore.YELLOW}⚠️ 当前无上涨股票{Style.RESET_ALL}")
+
+
+
 
         qualified_stocks = []  # 符合条件的股票列表
         table = PrettyTable()  # 创建美观的表格
