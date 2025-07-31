@@ -396,7 +396,6 @@ class StrategyTwoAnalyzer:
         closes = [k["close"] for k in klines[-days:]]
         return sum(closes) / days
 
-
     def calculate_convergence_score(self, ma_values: np.ndarray, klines: List[Dict], lookback_days: int = 5) -> float:
 
         """
@@ -728,15 +727,15 @@ class StrategyTwoAnalyzer:
             "analysis": analysis
         }
 
-    def analyze_hot_stocks(self, top_n: int = 20) -> List[Dict]:
-        """分析热股榜股票"""
+    def analyze_hot_stocks(self, top_n: int = 20) -> Tuple[List[Dict], str]:
+        """分析热股榜股票并返回结果HTML"""
         print(f"\n{Fore.CYAN}=== 开始分析热股榜前{top_n}只股票 ==={Style.RESET_ALL}")
 
         # 获取热股榜数据
         hot_stocks = self.get_hot_stocks(top_n)
         if not hot_stocks:
             print(f"{Fore.RED}无法获取热股榜数据{Style.RESET_ALL}")
-            return []
+            return [], ""
 
         # 数据清洗和转换
         processed_stocks = []
@@ -751,7 +750,7 @@ class StrategyTwoAnalyzer:
                         change_rate = float(change_rate.replace('%', ''))
                 stock['CHANGE_RATE'] = change_rate
 
-                # 处理涨跌幅字段
+                # 处理价格字段
                 new_price = stock['NEW_PRICE']
                 if isinstance(new_price, str):
                     if new_price == '-':  # 停牌股票
@@ -775,9 +774,6 @@ class StrategyTwoAnalyzer:
         else:
             print(f"{Fore.YELLOW}⚠️ 当前无上涨股票{Style.RESET_ALL}")
 
-
-
-
         qualified_stocks = []  # 符合条件的股票列表
         table = PrettyTable()  # 创建美观的表格
         table.field_names = [
@@ -786,6 +782,99 @@ class StrategyTwoAnalyzer:
         ]
         table.align = "r"  # 右对齐数字列
         table.align["名称"] = "l"  # 左对齐名称列
+
+        # 创建HTML表格
+        html_table = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>热股榜分析结果 (前{top_n}只股票)</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    color: #333;
+                }}
+                .container {{
+                    max-width: 100%;
+                    overflow-x: auto;
+                }}
+                h1 {{
+                    color: #2c3e50;
+                    text-align: center;
+                    margin-bottom: 20px;
+                }}
+                table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 20px;
+                }}
+                th, td {{
+                    padding: 10px;
+                    text-align: left;
+                    border: 1px solid #ddd;
+                }}
+                th {{
+                    background-color: #4a6fa5;
+                    color: white;
+                    font-weight: bold;
+                }}
+                tr:nth-child(even) {{
+                    background-color: #f2f2f2;
+                }}
+                .up {{
+                    color: #e74c3c;
+                    font-weight: bold;
+                }}
+                .down {{
+                    color: #27ae60;
+                    font-weight: bold;
+                }}
+                .qualified {{
+                    color: #27ae60;
+                    font-weight: bold;
+                }}
+                .unqualified {{
+                    color: #e74c3c;
+                }}
+                .highlight {{
+                    font-weight: bold;
+                }}
+                @media screen and (max-width: 600px) {{
+                    table {{
+                        font-size: 12px;
+                    }}
+                    th, td {{
+                        padding: 5px;
+                    }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>热股榜分析结果 (前{top_n}只股票)</h1>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>当前价</th>
+                            <th>涨跌</th>
+                            <th>涨幅</th>
+                            <th>大涨日</th>
+                            <th>调整天数</th>
+                            <th>量比</th>
+                            <th>近均线</th>
+                            <th>拟合得分</th>
+                            <th>结果</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """
 
         # 统计变量
         up_count = 0  # 上涨股票数
@@ -797,70 +886,67 @@ class StrategyTwoAnalyzer:
             stock_name = stock["SECURITY_NAME_ABBR"]
             current_price = stock["NEW_PRICE"]
             change_rate = stock["CHANGE_RATE"]
-            price_change = current_price - (current_price / (1 + change_rate / 100)) if change_rate != '-' else 0
+
+            # 计算价格变化
+            try:
+                price_change = current_price - (current_price / (1 + change_rate / 100)) if isinstance(change_rate,
+                                                                                                       (int,
+                                                                                                        float)) else 0
+            except:
+                price_change = 0
 
             # 统计涨跌情况
-            if change_rate == '-':
+            if isinstance(change_rate, str) and change_rate == '-':
                 no_change_count += 1
-            elif change_rate > 0:
-                up_count += 1
-            else:
-                down_count += 1
+            elif isinstance(change_rate, (int, float)):
+                if change_rate > 0:
+                    up_count += 1
+                else:
+                    down_count += 1
 
             print(f"\n{Fore.YELLOW}[{i}/{top_n}] 分析 {stock_code} {stock_name}...{Style.RESET_ALL}")
+            print(f"  当前价: {current_price:.2f}")
+            print(f"  涨跌幅: {change_rate:.2f}%" if isinstance(change_rate, (int, float)) else "  涨跌幅: -")
 
             # 获取K线数据
             klines = self.get_daily_kline(stock_code)
             if not klines:
-                print(f"{Fore.RED}无法获取K线数据{Style.RESET_ALL}")
+                print(f"{Fore.RED}  无法获取K线数据{Style.RESET_ALL}")
+                # 添加表格行
                 table.add_row([
                     i, stock_code, stock_name, current_price,
-                    f"{price_change:.2f}" if change_rate != '-' else '-',
-                    f"{change_rate:.2f}%" if change_rate != '-' else '-',
+                    f"{price_change:.2f}" if isinstance(change_rate, (int, float)) else '-',
+                    f"{change_rate:.2f}%" if isinstance(change_rate, (int, float)) else '-',
                     "-", "-", "-", "-",
                     f"{Fore.RED}无数据{Style.RESET_ALL}"
                 ])
+
+                # 添加HTML行
+                html_table += f"""
+                    <tr>
+                        <td>{i}</td>
+                        <td>{stock_code}</td>
+                        <td>{stock_name}</td>
+                        <td>{current_price:.2f}</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td style="color: #e74c3c;">无数据</td>
+                        <td>-</td>
+                    </tr>
+                """
                 continue
 
             try:
                 # 执行策略分析
                 analysis = self.analyze_strategy_two(klines)
 
+                # 打印分析结果
                 if analysis["qualified"]:
-                    print(f"  结论: {Fore.RED}✅ 符合条件{Style.RESET_ALL}")
-                else:
-                    print(f"  结论: {Fore.GREEN}❌ 不符合条件 - {analysis['reason']}{Style.RESET_ALL}")
-
-                # 构建详细结果输出
-                result_parts = []
-                if "peak_day" in analysis:
-                    result_parts.append(f"{Fore.RED}大涨日:{analysis['peak_day']}{Style.RESET_ALL}")
-
-                if "adjust_days" in analysis:
-                    adjust_color = Fore.RED if (
-                                analysis.get("adjust_days", 0) >= self.MIN_CONSECUTIVE_DAYS) else Fore.GREEN
-                    result_parts.append(f"{adjust_color}调整:{analysis['adjust_days']}天{Style.RESET_ALL}")
-
-                if "current_volume_ratio" in analysis:
-                    ratio_color = Fore.RED if (
-                            analysis["current_volume_ratio"] < self.ABSOLUTE_SHRINK_THRESHOLD and
-                            analysis["current_volume_ratio"] != 0
-                    ) else Fore.GREEN
-                    result_parts.append(f"{ratio_color}量比:{analysis['current_volume_ratio']:.2f}{Style.RESET_ALL}")
-
-                if "near_ma" in analysis:
-                    ma_color = Fore.RED if analysis.get("is_near_ma", False) else Fore.GREEN
-                    result_parts.append(f"{ma_color}均线:{analysis['near_ma']}{Style.RESET_ALL}")
-
-                if "ma_score" in analysis:
-                    ma_color = Fore.RED if (analysis.get("ma_score", 0) > self.MIN_MA_SCORE) else Fore.GREEN
-                    result_parts.append(f"{ma_color}拟合得分:{analysis['ma_score']:.2f}{Style.RESET_ALL}")
-
-                if result_parts:
-                    print("  " + " | ".join(result_parts))
-
-                # 记录符合条件的股票
-                if analysis["qualified"]:
+                    print(f"  结论: {Fore.GREEN}✅ 符合条件{Style.RESET_ALL}")
                     qualified_stocks.append({
                         "rank": i,
                         "code": stock_code,
@@ -870,46 +956,119 @@ class StrategyTwoAnalyzer:
                         "change_rate": change_rate,
                         "analysis": analysis
                     })
+                else:
+                    print(f"  结论: {Fore.RED}❌ 不符合条件 - {analysis['reason']}{Style.RESET_ALL}")
 
                 # 添加表格行
+                change_class = "up" if isinstance(change_rate,
+                                                  (int, float)) and change_rate > 0 else "down" if isinstance(
+                    change_rate, (int, float)) and change_rate < 0 else ""
+                result_class = "qualified" if analysis["qualified"] else "unqualified"
+
+                peak_day = analysis.get('peak_day', '无')
+                adjust_days = analysis.get('adjust_days', 0)
+                volume_ratio = analysis.get('current_volume_ratio', 0)
+                near_ma = analysis.get('near_ma', '无')
+                ma_score = analysis.get('ma_score', 0)
+
+                # 设置分数颜色
+                ma_score_class = ""
+                if isinstance(ma_score, (int, float)):
+                    if ma_score > 8:
+                        ma_score_class = "highlight up"
+                    elif ma_score > 5:
+                        ma_score_class = "highlight"
+
+                # 格式化显示
+                change_rate_display = f"{change_rate:.2f}%" if isinstance(change_rate, (int, float)) else "-"
+                price_change_display = f"{price_change:.2f}" if isinstance(change_rate, (int, float)) else "-"
+                ma_score_display = f"{ma_score:.2f}" if isinstance(ma_score, (int, float)) else "无"
+
                 table.add_row([
                     i,
                     stock_code,
                     stock_name,
                     current_price,
                     f"{Fore.RED if price_change > 0 else Fore.GREEN}{price_change:.2f}{Style.RESET_ALL}",
-                    f"{Fore.RED if (change_rate != '-' and change_rate > 0) else Fore.GREEN}{change_rate}%{Style.RESET_ALL}",
-                    f"{Fore.RED if 'peak_day' in analysis and analysis['peak_day'] else Fore.GREEN}{analysis.get('peak_day', '无')}{Style.RESET_ALL}",
-                    f"{Fore.RED if (analysis.get('adjust_days', 0) >= self.MIN_CONSECUTIVE_DAYS) else Fore.GREEN}{analysis.get('adjust_days', 0)}{Style.RESET_ALL}",
-                    f"{Fore.RED if (analysis.get('current_volume_ratio', 0) < self.volume_threshold and analysis.get('current_volume_ratio', 0) > 0) else Fore.YELLOW if analysis.get('current_volume_ratio', 0) < 0.5 else Fore.GREEN}{analysis.get('current_volume_ratio', 0):.2f}{Style.RESET_ALL}",
-                    f"{Fore.RED if analysis.get('is_near_ma', False) else Fore.GREEN}{analysis.get('near_ma', '无')}{Style.RESET_ALL}",
-                    f"{Fore.RED if (analysis.get('ma_score', 0) > self.MIN_MA_SCORE) else Fore.GREEN}{analysis.get('ma_score', 0):.2f}{Style.RESET_ALL}",
-                    f"{Fore.RED if analysis['qualified'] else Fore.GREEN}{'符合' if analysis['qualified'] else '不符合'}{Style.RESET_ALL}",
+                    f"{Fore.RED if (isinstance(change_rate, (int, float)) and change_rate > 0) else Fore.GREEN}{change_rate_display}{Style.RESET_ALL}",
+                    f"{Style.BRIGHT if 'peak_day' in analysis and analysis['peak_day'] else ''}{Fore.RED if 'peak_day' in analysis and analysis['peak_day'] else Fore.GREEN}{peak_day}{Style.RESET_ALL}",
+                    f"{Style.BRIGHT if (analysis.get('adjust_days', 0) >= self.MIN_CONSECUTIVE_DAYS) else ''}{Fore.RED if (analysis.get('adjust_days', 0) >= self.MIN_CONSECUTIVE_DAYS) else Fore.GREEN}{adjust_days}{Style.RESET_ALL}",
+                    f"{Style.BRIGHT if (analysis.get('current_volume_ratio', 0) < self.volume_threshold and analysis.get('current_volume_ratio', 0) > 0) else ''}{Fore.RED if (analysis.get('current_volume_ratio', 0) < self.volume_threshold and analysis.get('current_volume_ratio', 0) > 0) else Fore.YELLOW if analysis.get('current_volume_ratio', 0) < 0.5 else Fore.GREEN}{volume_ratio:.2f}{Style.RESET_ALL}",
+                    f"{Style.BRIGHT if analysis.get('is_near_ma', False) else ''}{Fore.RED if analysis.get('is_near_ma', False) else Fore.GREEN}{near_ma}{Style.RESET_ALL}",
+                    f"{Style.BRIGHT if (analysis.get('ma_score', 0) > self.MIN_MA_SCORE) else ''}{Fore.RED if (analysis.get('ma_score', 0) > self.MIN_MA_SCORE) else Fore.GREEN}{ma_score_display}{Style.RESET_ALL}",
+                    f"{Style.BRIGHT if analysis['qualified'] else ''}{Fore.RED if analysis['qualified'] else Fore.GREEN}{'符合' if analysis['qualified'] else '不符合'}{Style.RESET_ALL}",
                 ])
+
+                # 添加HTML行
+                html_table += f"""
+                    <tr>
+                        <td>{i}</td>
+                        <td>{stock_code}</td>
+                        <td>{stock_name}</td>
+                        <td>{current_price:.2f}</td>
+                        <td class="{change_class}">{price_change_display}</td>
+                        <td class="{change_class}">{change_rate_display}</td>
+                        <td>{peak_day}</td>
+                        <td>{adjust_days}</td>
+                        <td>{volume_ratio:.2f}</td>
+                        <td>{near_ma}</td>
+                        <td class="{ma_score_class}">{ma_score_display}</td>
+                        <td class="{result_class}">{"符合" if analysis["qualified"] else "不符合"}</td>
+                    </tr>
+                """
 
             except Exception as e:
                 print(f"{Fore.RED}分析股票 {stock_code} 时出错: {e}{Style.RESET_ALL}")
+                # 添加表格行
                 table.add_row([
                     i, stock_code, stock_name, current_price,
-                    f"{price_change:.2f}" if change_rate != '-' else '-',
-                    f"{change_rate:.2f}%" if change_rate != '-' else '-',
+                    f"{price_change:.2f}" if isinstance(change_rate, (int, float)) else '-',
+                    f"{change_rate:.2f}%" if isinstance(change_rate, (int, float)) else '-',
                     "-", "-", "-", "-",
                     f"{Fore.RED}分析错误{Style.RESET_ALL}"
                 ])
+
+                # 添加HTML行
+                html_table += f"""
+                    <tr>
+                        <td>{i}</td>
+                        <td>{stock_code}</td>
+                        <td>{stock_name}</td>
+                        <td>{current_price:.2f}</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td style="color: #e74c3c;">分析错误</td>
+                        <td>-</td>
+                    </tr>
+                """
                 continue
 
-        # 打印汇总表格
+        # 完成HTML表格
+        html_table += """
+                    </tbody>
+                </table>
+            </div>
+        </body>
+        </html>
+        """
+
+        # 打印汇总信息
         print(f"\n{Fore.CYAN}=== 热股榜分析结果 ==={Style.RESET_ALL}")
         print(table)
 
-        # 打印涨跌统计
         print(f"\n{Fore.MAGENTA}=== 涨跌统计 ==={Style.RESET_ALL}")
         print(f"上涨股票数: {Fore.RED}{up_count}{Style.RESET_ALL}")
         print(f"下跌股票数: {Fore.GREEN}{down_count}{Style.RESET_ALL}")
         if no_change_count > 0:
             print(f"平盘股票数: {Fore.YELLOW}{no_change_count}{Style.RESET_ALL}")
-        print(f"上涨比例: {Fore.RED}{(up_count / len(hot_stocks)) * 100:.1f}%{Style.RESET_ALL}")
-        print(f"下跌比例: {Fore.GREEN}{(down_count / len(hot_stocks)) * 100:.1f}%{Style.RESET_ALL}")
+
+        if hot_stocks:
+            print(f"上涨比例: {Fore.RED}{(up_count / len(hot_stocks)) * 100:.1f}%{Style.RESET_ALL}")
+            print(f"下跌比例: {Fore.GREEN}{(down_count / len(hot_stocks)) * 100:.1f}%{Style.RESET_ALL}")
 
         print(f"\n找到 {len(qualified_stocks)} 只符合放量大涨后缩量调整条件的股票")
 
@@ -927,14 +1086,14 @@ class StrategyTwoAnalyzer:
                 print(f"  调整天数: {analysis['adjust_days']}天, 量比: {analysis['current_volume_ratio']:.2f}")
                 print(f"  接近均线: {analysis['near_ma']}")
 
-        # 保存结果到JSON文件
+        # 保存结果到文件
         if qualified_stocks:
             filename = f"strategy_two_qualified_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(qualified_stocks, f, ensure_ascii=False, indent=4)
             print(f"\n{Fore.CYAN}💾 分析结果已保存到: {filename}{Style.RESET_ALL}")
 
-        return qualified_stocks
+        return qualified_stocks, html_table
 
     def continuous_monitoring(self):
         """
